@@ -14,8 +14,8 @@ class CallingNamespace(object):
         return lambda *a, **k: self.__invoker(funcname, a, k)
 
 class DeferredResult(object):
-    __slots__ = ["start_time", "_triggered", "_succ", "_obj"]
-    def __init__(self):
+    def __init__(self, medium):
+        self.medium = medium
         self.start_time = time.time()
         self._triggered = False
     def trigger(self, succ, obj):
@@ -23,9 +23,15 @@ class DeferredResult(object):
         self._succ = succ
         self._obj = obj
     def wait(self, timeout = None):
-        if timeout is not None:
-            tend = self.start_time + timeout
-        
+        if not self._triggered:
+            if timeout is not None:
+                tend = self.start_time + timeout
+            self.medium.serve(time.time() - timeout)
+        return self.value
+    @property
+    def value(self):
+        self.wait()
+        return self
         
 
 class RPCMedium(object):
