@@ -1,3 +1,6 @@
+import time
+
+
 class StreamError(Exception):
     pass
 class StreamTimeout(StreamError):
@@ -29,10 +32,25 @@ class BaseStream(object):
         raise NotImplementedError()
     
     def recv(self, count, timeout):
-        pass
+        if timeout is not None:
+            t0 = time.time()
+        data = self._recv(count, timeout)
+        if timeout is not None:
+            timeout -= time.time() - t0
+        return data, timeout
     def write(self, data, timeout):
-        pass
-
+        if timeout is not None:
+            t0 = time.time()
+        self._write(data, timeout)
+        if timeout is not None:
+            timeout -= time.time() - t0
+        return timeout
+    
+    def _read(self, count, timeout):
+        raise NotImplementedError()
+    def _write(self, data, timeout):
+        raise NotImplementedError()
+    
 class _ClosedFile(object):
     def __getattr__(self, name):
         raise StreamClosed()

@@ -1,4 +1,9 @@
+from ..streams import StreamTimeout
+
+
 class ChannelError(Exception):
+    pass
+class ChannelTimeout(ChannelError):
     pass
 class ChannelSendError(ChannelError):
     pass
@@ -14,8 +19,18 @@ class BaseChannel(object):
     def fileno(self):
         return self.stream.fileno()
     def recv(self, timeout):
-        raise NotImplementedError()
+        try:
+            return self._recv(timeout)
+        except StreamTimeout, ex:
+            raise ChannelTimeout(ex)
     def send(self, data, timeout):
-        raise NotImplementedError()
+        try:
+            return self._send(timeout)
+        except StreamTimeout, ex:
+            raise ChannelTimeout(ex)
 
+    def _recv(self, timeout):
+        raise NotImplementedError()
+    def _send(self, data, timeout):
+        raise NotImplementedError()
 

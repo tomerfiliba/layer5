@@ -1,10 +1,11 @@
 from ..channels.binary import LimitedInt16Channel
 from ..mediums.rpc_v1 import RPCMedium
-from .base import Phase2Negotiator
+from .base import Phase2Negotiator, Phase2ProtocolError
 
 LimitedChannel = LimitedInt16Channel(8192)
 
-class Phase2ServerNegotiatorV1(Phase2Negotiator):
+
+class Phase2ServerNegotiator(Phase2Negotiator):
     VERSION = "1.0"
     
     def __init__(self, protocol, capabilities, timeout = Phase2Negotiator.DEFAULT_HANDSHAKE_TIMEOUT):
@@ -17,7 +18,7 @@ class Phase2ServerNegotiatorV1(Phase2Negotiator):
         medium.serve()
 
 
-class Phase2ClientNegotiatorV1(Phase2Negotiator):
+class Phase2ClientNegotiator(Phase2Negotiator):
     VERSION = "1.0"
     
     def __init__(self, protocol, capabilities, timeout = Phase2Negotiator.DEFAULT_HANDSHAKE_TIMEOUT):
