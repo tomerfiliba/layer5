@@ -38,4 +38,41 @@
    is returned to the caller 
 
 
+======================
+     Capabilities
+======================
+* compression - channel-level compression of frames; may heuristically disable
+  itself if compression ratio is too low (configurable), to save time
+* TLS - stream-level encryption and authentication
+* session - exchange cookies between both parties; allow the re-establishment
+  of dropped connections without the higher layers experiencing interruption
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
