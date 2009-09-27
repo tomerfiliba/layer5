@@ -1,0 +1,41 @@
+======================
+       Phase 1
+======================
+1) client connects to server
+2) client sends "HELLO NEGOTIATOR SERVER"
+3) server replies with "HELLO NEGOTIATOR CLIENT"
+4) client sends the list of supported phase 2 versions, separated by newlines
+5) server chooses version (normally the highest supported by both) and sends
+   back to client
+6) client sends "OK"
+7) both sides switch to the selected phase 2
+
+======================
+       Phase 2
+======================
+1) client sends the layer-6 protocol name (e.g., "HTTP") and the list of 
+   supported versions (e.g., ["1.0", "1.1"])
+2) server responds with the selected version of the layer 6 protocol
+3) client sends the rpc-medium versions it is willing to accept (at step 9)
+4) server responds with the selection version of the rpc medium
+5) client sends the list of mandatory capabilities, and the list of optional 
+   capabilities it is willing to support 
+6) server returns the list of capabilities to be used by this connection,
+   selecting all the client's mandatory capabilities unified with the server's
+   mandatory capabilities, and any of the optional capabilities that both 
+   sides support
+7) client initiates the handshake of each of the capabilities, in the order
+   that the server returned
+7.1) client invokes cap_handshake(capname, parameters). the function does not
+     return until both sides have finished the handshake. 
+7.2) if the handshake fails, and the capability was mandatory at least to one 
+     of the sides, the connection is terminated. otherwise, the client may 
+     choose to ignore that capability or terminate the connection.
+8) once all the capabilities have been handshaken, the client invokes 
+   negotiation_done(), in which the server validates that all the capabilities
+   have indeed been handshaken, and the negotiation is finished.
+9) the rpc-medium version negotiated at step 3 is applied, and the medium
+   is returned to the caller 
+
+
+

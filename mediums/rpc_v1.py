@@ -1,135 +1,107 @@
 import brine
-import time
 import itertools
-from functools import partial
+from .base import RPCMediumBase, RemotableException, GenericRemotableException
 
 
-class CallingNamespace(object):
-    __slots__ = ["__invoker"]
-    def __init__(self, invoker):
-        self.__invoker = invoker
-    def __getattr__(self, funcname):
-        return self[name]
-    def __getitem__(self, funcname):
-        return lambda *a, **k: self.__invoker(funcname, a, k)
 
-class DeferredResult(object):
-    def __init__(self, medium):
-        self.medium = medium
-        self.start_time = time.time()
-        self._triggered = False
-    def trigger(self, succ, obj):
-        self._triggered = True
-        self._succ = succ
-        self._obj = obj
-    def wait(self, timeout = None):
-        if not self._triggered:
-            if timeout is not None:
-                tend = self.start_time + timeout
-            self.medium.serve(time.time() - timeout)
-        return self.value
-    @property
-    def value(self):
-        self.wait()
-        return self
-        
 
-class RPCMedium(object):
+
+class RPCMedium(RPCMediumBase):
+    VERSION = "1.0"
+    _DISPATCHERS = {}
+    
     TAG_CALL = 1
     TAG_METACALL = 2
     TAG_REPLY = 3
-    REP_SYNC = 4
-    REP_ASYNC = 5
+    REP_SYNC = 1
+    REP_ASYNC = 2
     
-    def __init__(self, channel, service, meta_service):
-        self.channel = channel
-        self.meta_service = meta_service
-        self.service = service
-        self.call = CallingNamespace(self.invoke_sync)
-        self._seq = itertools.count()
+    def _register(tag, _DISPATCHERS = _DISPATCHERS):
+        def deco(func):
+            _DISPATCHERS[tag] = func
+            return func
+        return deco
+    
+    def __init__(self, channel, service):
+        RPCMediumBase.__init__(self, channel, service)
+        self._seq = itertools.counter()
         self._replies = {}
     
-    def _send(self, tag, seq, args):
+    def _send(self, tag, seq, *args):
         raw = brine.dump((tag, seq, args))
         self.channel.send(raw)
-    def _recv(self):
-        raw = self.channel.recv()
-        return brine.load(raw)
     
-    def serve(self):
+    def serve(self, timeout = None):
         try:
-            tag, seq, args = self.recv()
+            tag, seq, args = brine.load(self.channel.recv(timeout))
+            dispatcher = self._DISPATCHERS[tag]
         except Exception:
             pass
-        
-        if tag == self.TAG_CALL:
-            self._dispatch_call(seq, args)
-        elif tag == self.TAG_METACALL:
-            self._dispatch_metacall(seq, args)
-        elif tag == self.TAG_REPLY:
-            self._dispatch_reply(seq, args)
-        else:
-            self.meta_service.handle_invalid_request(tag, seq, args)
+        try:
+            dispatcher(seq, args)
+        except RpcProtocolError, ex:
+            pass
     
-    def _dispatch_call(self, seq, args):
-        funcname, pargs, kwargs = args
+    @_register(TAG_CALL)
+    def _handle_call(self, seq, args):
         try:
-            func = self.service[funcname]
-        except LookupError:
-            self.meta_service.handle_unknown_function(seq, funcname, pargs, kwargs)
-            return
+            funcname, args, kwargs = args
+        except ValueError:
+            raise InvalidCall("wrong structure")
         try:
-            res = func(*pargs, **kwargs)
-        except RemotableException, ex:
-            self._send(self.TAG_REPLY, seq, (False, ex.dump()))
+            res = self.serve.invoke(funcname, args, kwargs)
         except Exception, ex:
-            output = self.meta_service.dump_exception(ex)
-            self._send(self.TAG_REPLY, seq, (False, output))
+            dumped = dump_exc()
+            self._send(self.TAG_REPLY, seq, False, dumped)
         else:
-            self._send(self.TAG_REPLY, seq, (True, res))
+            self._send(self.TAG_REPLY, seq, True, res)
+
+    @_register(TAG_METACALL)
+    def _handle_metacall(self, seq, args):
+        try:
+            funcname, args, kwargs = args
+        except ValueError:
+            raise InvalidMetaCall("wrong structure")
+        try:
+            if funcname not in self.service.META_FUNCTIONS:
+                raise InvalidMetaCall("cannot access %r" % (funcname,))
+            res = getattr(self.serve, funcname)(*args, **kwargs)
+        except Exception, ex:
+            dumped = dump_exc(sys.exc_info())
+            self._send(self.TAG_REPLY, seq, False, dumped)
+        else:
+            self._send(self.TAG_REPLY, seq, True, res)
     
-    def _dispatch_metacall(self, seq, args):
-        pass
-    
-    def _dispatch_reply(self, seq, args):
-        mode, callback = self._replies.pop(seq, (None, None))
-        succ, obj = args
+    @_register(TAG_REPLY)
+    def _handle_reply(self, seq, args):
+        try:
+            mode, slot = self._replies[seq]
+            succ, obj = args
+        except Exception:
+            raise InvalidReply("wrong structure")
         if mode == self.REP_SYNC:
-            self._replies[seq] = (succ, obj)
+            slot.extend((succ, obj))
         elif mode == self.REP_ASYNC:
-            callback(succ, obj)
+            slot(succ, obj)
         else:
-            self.meta_service.handle_invalid_reply_sequence(seq, succ, obj)
+            raise InvalidReply("invalid mode")
     
-    def invoke_sync(self, funcname, args, kwargs):
+    def invoke_sync(self, func, args, kwargs):
         seq = self._seq.next()
-        self._send(self.TAG_CALL, seq, (funcname, args, tuple(kwargs.items())))
-        self._replies[seq] = (self.REP_SYNC, None)
-        while self._replies[seq][0] == self.REP_EMPTY:
+        self._send(self.TAG_CALL, seq, func, args, kwargs)
+        empty = self._replies[seq] = (self.REP_SYNC, [])
+        while self._replies[seq] is empty:
             self.serve()
-        succ, obj = self._replies.pop(seq)
+        _, (succ, obj) = self._replies.pop(seq)
         if succ:
             return obj
         else:
             raise obj
-
-    def invoke_async(self, callback, funcname, args, kwargs):
+    
+    def invoke_async(self, callback, func, args, kwargs):
         seq = self._seq.next()
-        self._send(self.TAG_CALL, seq, (funcname, args, tuple(kwargs.items())))
+        self._send(self.TAG_CALL, seq, func, args, kwargs)
         self._replies[seq] = (self.REP_ASYNC, callback)
-
-    def invoke_deferred(self, funcname, args, kwargs):
-        d = DeferredResult(self)
-        self.invoke_async(d.trigger, funcname, args, kwargs)
-        return d
-
-
-
-
-
-
-
-
-
+    
 
 
