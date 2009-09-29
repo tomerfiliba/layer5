@@ -32,10 +32,13 @@ retry_errnos = set(getattr(errno, n) for n in ["EAGAIN", "EWOULDBLOCK"] if hasat
 
 
 class SocketStream(BaseStream):
-    __slots__ = ["sock"]
+    __slots__ = ["sock", "peer_info"]
     
-    def __init__(self, sock):
+    def __init__(self, sock, peer_info = None):
         self.sock = sock
+        if not peer_info:
+            peer_info = sock.getpeername()
+        self.peer_info = peer_info
     
     @classmethod
     def connect(cls, host, port, connect_timeout = 2):
@@ -43,7 +46,7 @@ class SocketStream(BaseStream):
         sock.settimeout(connect_timeout)
         sock.connect((host, port))
         sock.settimeout(None)
-        return cls(sock)
+        return cls(sock, (host, port, connect_timeout))
     
     def _close(self):
         try:
@@ -58,6 +61,11 @@ class SocketStream(BaseStream):
     
     def fileno(self):
         return self.sock.fileno()
+
+    def reconnect(self):
+        if not self.closed:
+            raise ValueError("")
+        return self.connect(*self.peer_info)
     
     def read(self, count, timeout):
         data = []

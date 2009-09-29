@@ -10,3 +10,22 @@ parameters:
 
 
 """
+import zlib
+
+
+class CompressedChannel(object):
+    def send(self, data, timeout):
+        data2 = zlib.compress(data, self.COMPRESSION_LEVEL)
+        return self.channel.send(data2, timeout)
+    
+    def recv(self, timeout):
+        data, timeout = self.channel.recv(timeout)
+        data2 = zlib.decompress(data)
+        return data2, timeout
+
+
+class CompressionCapability(object):
+    def handshake(self, medium):
+        medium.channel = CompressedChannel(medium.channel)
+
+

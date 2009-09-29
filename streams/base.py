@@ -30,6 +30,8 @@ class BaseStream(object):
         raise NotImplementedError()
     def fileno(self):
         raise NotImplementedError()
+    def reconnect(self):
+        raise NotImplementedError()
     
     def recv(self, count, timeout):
         if timeout is not None:
