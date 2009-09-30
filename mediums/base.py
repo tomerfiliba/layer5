@@ -157,6 +157,17 @@ class StatefulServiceBase(ServiceBase):
         self.state = next_state
         return res
 
+class DynamicStatefulService(ServiceBase):
+    def __init__(self, operations):
+        self.operations = operations
+    def query_functions(self):
+        return self.operations.keys()
+    def invoke(self, funcname, args, kwargs):
+        res, new_operations = self.operations[funcname](*args, **kwargs)
+        self.operations = new_operations
+        return res
+
+
 #===============================================================================
 # RPC Medium
 #===============================================================================
